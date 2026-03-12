@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from port_scanner import PortScanner
+from save_set import SaveSet
 
 
 class ControlPanel(ctk.CTkFrame):
@@ -11,6 +12,9 @@ class ControlPanel(ctk.CTkFrame):
         self.on_send_channel = on_send_channel
         self.on_send_cmd = on_send_cmd
 
+        # 保存済み設定を読み込む
+        self.settings = SaveSet.load()
+
         self._setup_ui()
 
     def _setup_ui(self):
@@ -18,7 +22,7 @@ class ControlPanel(ctk.CTkFrame):
 
         # COMポート選択
         ctk.CTkLabel(self, text="COMポート:").pack(side="left", padx=5)
-        self.port_var = ctk.StringVar(value="")
+        self.port_var = ctk.StringVar(value=self.settings["port"])
         self.port_dropdown = ctk.CTkOptionMenu(
             self,
             variable=self.port_var,
@@ -35,6 +39,7 @@ class ControlPanel(ctk.CTkFrame):
         # チャンネル入力
         ctk.CTkLabel(self, text="CH:").pack(side="left", padx=5)
         self.channel_entry = ctk.CTkEntry(self, width=80)
+        self.channel_entry.insert(0, self.settings["channel"])
         self.channel_entry.pack(side="left", padx=5)
         ctk.CTkButton(self, text="送信", width=60, command=self._on_send_channel).pack(
             side="left", padx=5
@@ -51,6 +56,10 @@ class ControlPanel(ctk.CTkFrame):
     def get_port(self):
         """選択中のCOMポートを返す"""
         return self.port_var.get()
+
+    def get_channel(self):
+        """入力中のチャンネルを返す"""
+        return self.channel_entry.get()
 
     def set_running(self, is_running):
         """実行状態に応じてUIを更新する"""

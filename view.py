@@ -5,6 +5,7 @@ from serial_reader import SerialReader
 from view_wave_chart import WaveChart
 from view_control_panel import ControlPanel
 from packet import PktKey
+from save_set import SaveSet
 
 # 更新間隔（ミリ秒）。10Hz = 100ms
 UPDATE_INTERVAL_MS = 100
@@ -24,6 +25,9 @@ class View(ctk.CTk):
 
         self._setup_ui()
         self._update()
+
+        # ウィンドウを閉じるときに設定を保存する
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _setup_ui(self):
         """UIレイアウトを作成する"""
@@ -90,6 +94,18 @@ class View(ctk.CTk):
             self.wave_chart.update()
 
         self.after(UPDATE_INTERVAL_MS, self._update)
+
+    def _on_close(self):
+        """ウィンドウを閉じるときの処理"""
+        # 設定を保存する
+        SaveSet.save(
+            port=self.control_panel.get_port(),
+            channel=self.control_panel.get_channel(),
+        )
+
+        # 受信を停止してウィンドウを閉じる
+        self._stop()
+        self.destroy()
 
 
 if __name__ == "__main__":
