@@ -1,11 +1,10 @@
 import customtkinter as ctk
 from port_scanner import PortScanner
-from save_set import SaveSet
 
 
 class ControlPanel(ctk.CTkFrame):
 
-    def __init__(self, master, on_toggle, on_send_channel, on_send_cmd):
+    def __init__(self, master, on_toggle, on_send_channel, on_send_cmd, settings):
         super().__init__(master)
 
         self.on_toggle = on_toggle
@@ -13,7 +12,7 @@ class ControlPanel(ctk.CTkFrame):
         self.on_send_cmd = on_send_cmd
 
         # 保存済み設定を読み込む
-        self.settings = SaveSet.load()
+        self.settings = settings
 
         self._setup_ui()
 

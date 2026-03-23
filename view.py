@@ -23,6 +23,9 @@ class View(ctk.CTk):
         self.is_running = False
         self.lock = threading.Lock()
 
+        # 保存済み設定を読み込む
+        self.settings = SaveSet.load()
+
         self._setup_ui()
         self._update()
 
@@ -32,18 +35,22 @@ class View(ctk.CTk):
     def _setup_ui(self):
         """UIレイアウトを作成する"""
 
-        # 波形表示エリア（上部）
-        self.wave_chart = WaveChart(master=self)
-        self.wave_chart.pack(fill="both", expand=True, padx=10, pady=5)
+        self.columnconfigure(0, weight=1)  # 列0が余ったスペースをすべて取る
+        self.rowconfigure(1, weight=1)
 
-        # 操作パネル（下部）
+        # 波形表示エリア（下部）
+        self.wave_chart = WaveChart(master=self)
+        self.wave_chart.grid(row=1, column=0, sticky="nsew")
+
+        # 操作パネル（上部）
         self.control_panel = ControlPanel(
             master=self,
             on_toggle=self._on_toggle,
             on_send_channel=self._on_send_channel,
             on_send_cmd=self._on_send_cmd,
+            settings=self.settings,
         )
-        self.control_panel.pack(fill="x", padx=10, pady=5)
+        self.control_panel.grid(row=0, column=0, pady=(10, 10), sticky="ns")
 
     def _on_toggle(self):
         """開始・停止ボタンの処理"""
@@ -93,10 +100,13 @@ class View(ctk.CTk):
         with self.lock:
             self.wave_chart.update()
 
-        self.after(UPDATE_INTERVAL_MS, self._update)
+        self._update_id = self.after(UPDATE_INTERVAL_MS, self._update)
 
     def _on_close(self):
         """ウィンドウを閉じるときの処理"""
+        # after()の定期処理をキャンセルする
+        self.after_cancel(self._update_id)
+
         # 設定を保存する
         SaveSet.save(
             port=self.control_panel.get_port(),
@@ -105,6 +115,7 @@ class View(ctk.CTk):
 
         # 受信を停止してウィンドウを閉じる
         self._stop()
+        self.quit()  # mainloopを止める
         self.destroy()
 
 
