@@ -7,11 +7,12 @@ SETTINGS_FILE = "settings.json"
 class SaveSet:
 
     @staticmethod
-    def save(port, channel):
+    def save(port, channel, cmd):
         """設定をJSONファイルに保存する"""
         data = {
             "port": port,
             "channel": channel,
+            "cmd": cmd,
         }
         with open(SETTINGS_FILE, "w") as f:
             json.dump(data, f)
@@ -20,7 +21,7 @@ class SaveSet:
     def load():
         """設定をJSONファイルから読み込む。ファイルがなければデフォルト値を返す"""
         if not os.path.exists(SETTINGS_FILE):
-            return {"port": "", "channel": ""}
+            return {"port": "", "channel": "", "cmd": ""}
 
         with open(SETTINGS_FILE, "r") as f:
             return json.load(f)

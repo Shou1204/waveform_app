@@ -26,11 +26,11 @@ class SerialReader:
 
     def sync(self):
         """パケットの先頭（0xF0）を見つけるまで読み捨てる"""
-        print("同期中...")
+        # print("同期中...")
         while True:
             byte = self.ser.read(1)
             if byte == b"\xf0":
-                print("同期完了")
+                # print("同期完了")
                 return
 
     def read(self):
@@ -59,6 +59,29 @@ class SerialReader:
 
         return packet
 
+    def send_ch(self, ch):
+        """チャンネル変更命令を送信する"""
+        # CH番号を4桁のASCIIバイト列に変換
+        # 例: 1001 → b'1001'
+        ch_bytes = ch.encode("ascii")
+
+        start = bytes([0x02])
+        end = bytes([0x03])
+        mes = start + b"C" + ch_bytes + end
+        print(mes)
+
+        self.ser.write(mes)
+
+    def send_cmd(self, cmd):
+        """CMDを送信する"""
+        cmd_asc = cmd.encode("ascii")
+        start = bytes([0x02])
+        end = bytes([0x03])
+        mes = start + cmd_asc + end
+        print(mes)
+
+        self.ser.write(mes)
+
     def _parse_int(self, raw, offset, size):
         """指定範囲のバイト列を整数に変換する（下位7ビットのみ有効）"""
         value = 0
@@ -74,5 +97,6 @@ class SerialReader:
             high = raw[offset + i * 2] & 0x7F
             low = raw[offset + i * 2 + 1] & 0x7F
             value = ((high << 7) | low) & 0x7FF  # bit0〜bit10のみ
+            value -= 1024
             ecg_list.append(value)
         return ecg_list

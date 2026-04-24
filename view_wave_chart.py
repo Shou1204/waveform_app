@@ -3,7 +3,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import customtkinter as ctk
 
 # 画面に表示するサンプル数
-DISPLAY_SAMPLES = 300
+DISPLAY_SAMPLES = 1200
 
 
 class WaveChart(ctk.CTkFrame):
@@ -20,16 +20,16 @@ class WaveChart(ctk.CTkFrame):
         """matplotlibのグラフを作成してウィンドウに埋め込む"""
 
         # 黒背景のグラフ
-        self.fig, self.ax = plt.subplots(figsize=(8, 4), facecolor="black")
-        self.ax.set_facecolor("black")
-        self.ax.tick_params(colors="green")
-        self.ax.spines[:].set_color("green")
+        self.fig, self.ax = plt.subplots(figsize=(8, 4), facecolor="black")  # 大背景
+        self.ax.set_facecolor("black")  # グラフ背景
+        self.ax.tick_params(colors="ivory")  # メモリ
+        self.ax.spines[:].set_color("ivory")  # 枠線
 
         # 初期の空ラインを作成
         (self.line,) = self.ax.plot([], [], color="lime", linewidth=1)
 
         # Y軸の範囲を固定（ECGデータのbit0〜bit10 = 0〜2047）
-        self.ax.set_ylim(0, 2047)
+        self.ax.set_ylim(-2047, 2047)
         self.ax.set_xlim(0, DISPLAY_SAMPLES)
 
         # グラフをウィンドウに埋め込む
