@@ -1,25 +1,17 @@
 from view import View
+import os
+import sys
+
+
+def get_resource_path(relative_path):
+    """PyInstallerで1つのファイルにまとめた際、解凍先の一時フォルダのパスを返す"""
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
+
+# もし画像やjsonを読み込んでいるなら、この関数を通すようにします
+# 例: image_path = get_resource_path("assets/icon.png")
 
 app = View()
 app.mainloop()
-
-
-# --- テスト用コード（一時的非表示）---
-# from serial_reader import SerialReader
-# from packet import PktKey
-# PORT = "COM7"
-
-# reader = SerialReader(port=PORT)
-# reader.open()
-# reader.sync()
-
-# for _ in range(5):
-#     reader.sync()
-#     packet = reader.read()
-#     if packet:
-#         print(f"シーケンスNo: {packet[PktKey.SEQ_NO]}")
-#         print(f"チャンネル:   {packet[PktKey.CHANNEL]}")
-#         print(f"ECGデータ:    {packet[PktKey.ECG]}")
-#         print("---")
-
-# reader.close()

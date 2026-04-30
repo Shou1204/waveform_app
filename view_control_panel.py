@@ -5,42 +5,61 @@ from wave_list import WAVE_LIST
 
 class ControlPanel(ctk.CTkFrame):
 
+    COLOR_SUCCESS = "#03a53e"
+    COL_TXT1 = "#b9b9b9"
+
+    # --------------------------------------------------------
+    #               ウィジェット位置のテーブル
+    # --------------------------------------------------------
     POS = {
-        # ウィジェット位置のテーブル
-        # 起動・停止
-        "run_btn": {
-            "row": 0,
-            "column": 0,
-            "padx": (5, 10),
-            "rowspan": 2,
-            "sticky": "ns",
-        },
-        # comポート
+        ## comポート
         "com_label": {
             "row": 0,
-            "column": 1,
-            "padx": (5, 0),
-            "pady": (0, 0),
-            "sticky": "ws",
+            "column": 0,
+            "padx": (10, 10),
+            "sticky": "w",
         },
-        "com_dd": {"row": 1, "column": 1, "padx": (5, 0)},
-        # ch
-        "ch_label": {"row": 0, "column": 2, "padx": (10, 0), "sticky": "ws"},
-        # "ch_entry": {"row": 1, "column": 2, "padx": (10, 0)},
-        "ch_btn": {"row": 1, "column": 3, "padx": (3, 0)},
-        # ch_dd
-        "ch_dd": {"row": 1, "column": 2, "padx": (5, 0)},
-        # cmd
-        "cmd_label": {"row": 0, "column": 4, "padx": (10, 0), "sticky": "ws"},
-        "cmd_entry": {"row": 1, "column": 4, "padx": (10, 0)},
-        "cmd_btn": {"row": 1, "column": 5, "padx": (3, 0)},
-        # rabel
-        "test_label": {"row": 0, "column": 6, "padx": (10, 10), "sticky": "ws"},
+        ## 起動・停止
+        "run_label": {
+            "row": 1,
+            "column": 0,
+            "padx": (10, 10),
+            "sticky": "ns",
+        },
+        "run_btn": {
+            "row": 1,
+            "column": 1,
+            "padx": (15, 10),
+            "sticky": "ns",
+        },
+        "com_dd": {"row": 0, "column": 1, "padx": (0, 0)},
+        ## コマンド
+        "cmd_label": {"row": 0, "column": 3, "padx": (10, 0), "sticky": "ws"},
+        "cmd_entry": {"row": 0, "column": 4, "padx": (10, 0), "sticky": "e"},
+        "cmd_btn": {"row": 0, "column": 5, "padx": (3, 0), "sticky": "w"},
+        ## 波形選択
+        "select_label": {"row": 1, "column": 3, "padx": (10, 0), "sticky": "ws"},
+        "select_btn": {
+            "row": 1,
+            "column": 4,
+            "padx": (10, 10),
+            "sticky": "ns",
+        },
+        ## 同期状態
+        "sync_label": {"row": 0, "column": 7, "padx": (10, 5), "sticky": "e"},
+        "sync_mark": {"row": 0, "column": 8, "padx": (10, 5), "sticky": "e"},
+        "sync_sts_label": {"row": 0, "column": 9, "padx": (5, 10), "sticky": "w"},
+        ## dummy
+        "dummy": {"row": 0, "column": 6, "padx": (5, 10), "sticky": "we"},
     }
 
-    def __init__(self, master, on_toggle, on_send_channel, on_send_cmd, settings):
-        super().__init__(master)
-        self.my_font = ctk.CTkFont(family="BIZ UDGothic", size=14, weight="bold")
+    def __init__(
+        self, master, on_toggle, on_send_channel, on_send_cmd, settings, **kwargs
+    ):
+        super().__init__(master, **kwargs)
+        self.my_font = ctk.CTkFont(family="BIZ UDGothic", size=12, weight="bold")
+
+        self.LABEL_SET1 = {"text_color": "#A0A0A0", "font": self.my_font}
 
         self.on_toggle = on_toggle
         self.on_send_channel = on_send_channel
@@ -53,20 +72,19 @@ class ControlPanel(ctk.CTkFrame):
         """UIパーツを配置する"""
         pos = self.POS
 
-        # 開始・停止ボタン
-        self.toggle_button = ctk.CTkButton(
-            self, text="開始", width=80, command=self.on_toggle, font=self.my_font
-        )
-        self.toggle_button.grid(**pos["run_btn"])
+        # グリッド幅調整用ダミーボックス
+        self.dummy_box = ctk.CTkFrame(self, width=20, height=20, fg_color="transparent")
+        self.dummy_box.grid(**pos["dummy"])
 
         # COMポート選択
-        ctk.CTkLabel(self, text="COMポート:", font=self.my_font).grid(
-            **pos["com_label"]
-        )
         self.port_var = ctk.StringVar(value=self.settings["port"])
+        ## ラベル
+        ctk.CTkLabel(self, text="COMポート", **self.LABEL_SET1).grid(**pos["com_label"])
+        ## DD
         self.port_dropdown = ctk.CTkOptionMenu(
             self,
             width=100,
+            height=20,
             variable=self.port_var,
             values=PortScanner.get_ports(),
             font=self.my_font,
@@ -74,80 +92,105 @@ class ControlPanel(ctk.CTkFrame):
         )
         self.port_dropdown.grid(**pos["com_dd"])
 
-        # チャンネル選択
-        self.ch_var = ctk.StringVar(value=self.settings["channel"])
-        self.ch_dd = ctk.CTkOptionMenu(
+        # 通信開始・停止
+        ## ラベル
+        self.power_label = ctk.CTkLabel(self, text="停止/通信開始", **self.LABEL_SET1)
+        self.power_label.grid(**pos["run_label"])
+        ## ボタン
+        self.power_tgl_btn = ctk.CTkSwitch(
             self,
-            width=100,
-            variable=self.ch_var,
-            values=[item["label"] for item in WAVE_LIST],
+            text="",
+            switch_width=36,
+            switch_height=18,
+            corner_radius=12,
+            border_width=2,
+            progress_color=self.COLOR_SUCCESS,
+            button_color="#E0E0E0",
+            button_hover_color="#FFFFFF",
+            command=self.on_toggle,
             font=self.my_font,
-            dropdown_font=self.my_font,
         )
-        self.ch_dd.grid(**pos["ch_dd"])
+        self.power_tgl_btn.grid(**pos["run_btn"])
 
-        # チャンネル入力
-        ctk.CTkLabel(self, text="波形選択:", font=self.my_font).grid(**pos["ch_label"])
-        self.channel_entry = ctk.CTkEntry(self, width=80, font=self.my_font)
-        self.channel_entry.insert(0, self.settings["channel"])
-        # self.channel_entry.grid(**pos["ch_entry"])
-        self.ch_btn = ctk.CTkButton(
-            self,
-            text="選択",
-            font=self.my_font,
-            width=60,
-            command=self._on_send_channel,
-        )
-        self.ch_btn.grid(**pos["ch_btn"])
-
-        # マニュアルコマンド入力
-        ctk.CTkLabel(self, text="CMD:", font=self.my_font).grid(**pos["cmd_label"])
-        self.cmd_entry = ctk.CTkEntry(self, width=120, font=self.my_font)
+        # コマンド
+        ctk.CTkLabel(self, text="コマンド", **self.LABEL_SET1).grid(**pos["cmd_label"])
+        self.cmd_entry = ctk.CTkEntry(self, width=160, height=20, font=self.my_font)
         self.cmd_entry.insert(0, self.settings["cmd"])
         self.cmd_entry.grid(**pos["cmd_entry"])
         self.cmd_btn = ctk.CTkButton(
-            self, text="送信", font=self.my_font, width=60, command=self._on_send_cmd
+            self,
+            text="送信",
+            font=self.my_font,
+            width=40,
+            height=20,
+            command=self._on_send_cmd,
         )
         self.cmd_btn.grid(**pos["cmd_btn"])
 
+        # 波形選択
+        ## ラベル
+        ctk.CTkLabel(self, text="波形選択", **self.LABEL_SET1).grid(
+            **pos["select_label"]
+        )
+        ## ボタン
+        self.select_wave_btn = ctk.CTkSegmentedButton(
+            self,
+            values=[item["label"] for item in WAVE_LIST],
+            font=self.my_font,
+            # **color,
+            command=self._on_send_channel,
+        )
+        self.select_wave_btn.grid(**pos["select_btn"])
+        self.select_wave_btn.set("未設定")  # 初期値
+
         # 同期状態
-        self.sync_label = ctk.CTkLabel(self, text="状態: 未同期", font=self.my_font)
-        self.sync_label.grid(**pos["test_label"])
+        ## ラベル
+        self.sync_label = ctk.CTkLabel(self, text="同期状態", **self.LABEL_SET1)
+        self.sync_label.grid(**pos["sync_label"])
+        ## ●
+        self.sync_mark = ctk.CTkLabel(self, text="●", font=self.my_font)
+        self.sync_mark.grid(**pos["sync_mark"])
+        ## 状態ラベル
+        self.sync_sts_chr = ctk.CTkLabel(
+            self,
+            text="---",
+            font=self.my_font,
+        )
+        self.sync_sts_chr.grid(**pos["sync_sts_label"])
 
     def set_sync_status(self, value):
-        self.sync_label.configure(text=f"状態: {value}")
+
+        match value:
+            case 0:
+                self.sync_sts_chr.configure(text="未")
+                self.sync_mark.configure(text_color="#FF6B6B")
+            case 1:
+                self.sync_sts_chr.configure(text="済")
+                self.sync_mark.configure(text_color="#00ff5e")
 
     def get_port(self):
         return self.port_var.get()
-
-    def get_channel(self):
-        return self.ch_dd.get()
 
     def get_cmd(self):
         return self.cmd_entry.get()
 
     def set_running(self, is_running):
         if is_running:
-            self.toggle_button.configure(text="停止")
             self.port_dropdown.configure(state="disabled")
-            self.ch_btn.configure(state="normal")
             self.cmd_btn.configure(state="normal")
+            self.select_wave_btn.configure(state="normal")
         else:
-            self.toggle_button.configure(text="開始")
             self.port_dropdown.configure(state="normal")
-            self.ch_btn.configure(state="disabled")
             self.cmd_btn.configure(state="disabled")
-            self.sync_label.configure(text="状態:   --- ")
+            self.select_wave_btn.configure(state="disabled")
+            self.sync_sts_chr.configure(
+                text="---",
+            )
+            self.sync_mark.configure(text_color="#656565")
 
-    # def _on_send_channel(self):
-    #     self.on_send_channel(self.channel_entry.get())
-
-    def _on_send_channel(self):
-        self.on_send_channel(self.get_wave_cmd())
-
-    def get_wave_cmd(self):
-        selected = self.ch_dd.get()
-        return next(item["cmd"] for item in WAVE_LIST if item["label"] == selected)
+    def _on_send_channel(self, val):
+        cmd = next(item["cmd"] for item in WAVE_LIST if item["label"] == val)
+        self.on_send_channel(cmd)
 
     def _on_send_cmd(self):
         self.on_send_cmd(self.cmd_entry.get())

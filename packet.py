@@ -32,8 +32,6 @@ class PktKey:
 
 
 # (項目名, オフセット, サイズ) のテーブル
-# オフセットは仕様書通り（パケット全体100バイトを基準）
-# ECGとチェックサムは別処理のためここには含めない
 PACKET_FIELDS = [
     (PktKey.STX, 0, 1),
     (PktKey.DATA_LEN, 1, 2),

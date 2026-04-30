@@ -15,7 +15,7 @@ class View(ctk.CTk):
 
     def __init__(self):
         super().__init__()
-        self.title("波形表示")
+        self.title("受信ユニット検査治具 v.0.0")
         self.geometry("800x500")
 
         # シリアル受信関連
@@ -25,10 +25,12 @@ class View(ctk.CTk):
 
         # 保存済み設定を読み込む
         self.settings = SaveSet.load()
-        print(self.settings)
 
         # 同期状態
-        self.latest_sync_sts = None  # UIに反映する確定値
+        self.latest_sync_sts = None
+
+        # 背景色
+        self.configure(fg_color="#000000")
 
         self._setup_ui()
         self._update()
@@ -44,7 +46,7 @@ class View(ctk.CTk):
 
         # 波形表示エリア（下部）
         self.wave_chart = WaveChart(master=self)
-        self.wave_chart.grid(row=1, column=0, sticky="nsew")
+        self.wave_chart.grid(row=1, column=0)
 
         # 操作パネル（上部）
         self.control_panel = ControlPanel(
@@ -52,9 +54,12 @@ class View(ctk.CTk):
             on_toggle=self._on_toggle,
             on_send_channel=self._on_send_channel,
             on_send_cmd=self._on_send_cmd,
+            fg_color="transparent",
             settings=self.settings,
         )
-        self.control_panel.grid(row=0, column=0, pady=(10, 10), sticky="wns")
+        self.control_panel.grid(
+            row=0, column=0, pady=(15, 0), padx=(15, 0), sticky="we"
+        )
 
     def _on_toggle(self):
         """開始・停止ボタンの処理"""
@@ -85,15 +90,18 @@ class View(ctk.CTk):
         self.reader.sync()
 
         while self.is_running:
-            self.reader.sync()
-            packet = self.reader.read()
+            try:
+                self.reader.sync()
+                packet = self.reader.read()
 
-            if packet:
-                new_sts = packet[PktKey.SYNC_STS]
+                if packet:
+                    new_sts = packet[PktKey.SYNC_STS]
 
-                with self.lock:
-                    self.wave_chart.add_samples(packet[PktKey.ECG])
-                    self.latest_sync_sts = new_sts
+                    with self.lock:
+                        self.wave_chart.add_samples(packet[PktKey.ECG])
+                        self.latest_sync_sts = new_sts
+            except Exception:
+                break
 
     def _on_send_channel(self, value):
         """チャンネル変更命令を送信する"""
@@ -120,24 +128,29 @@ class View(ctk.CTk):
         self._update_id = self.after(UPDATE_INTERVAL_MS, self._update)
 
     def _get_sync_sts(self, sts):
+        """同期状態を取得"""
+        # 3以外は未同期とみなします
         if self.is_running:
             match sts:
                 case 0 | 1 | 2:
-                    return "未同期"
+                    return False
                 case 3:
-                    return "同期済"
+                    return True
 
     def _on_close(self):
         """ウィンドウを閉じるときの処理"""
-        # after()の定期処理をキャンセルする
-        self.after_cancel(self._update_id)
 
-        # 設定を保存する
-        SaveSet.save(
-            port=self.control_panel.get_port(),
-            channel=self.control_panel.get_channel(),
-            cmd=self.control_panel.get_cmd(),
-        )
+        try:
+            # after()の定期処理をキャンセルする
+            self.after_cancel(self._update_id)
+
+            # 設定を保存する
+            SaveSet.save(
+                port=self.control_panel.get_port(),
+                cmd=self.control_panel.get_cmd(),
+            )
+        except Exception:
+            print(f"【エラー】データの保存に失敗しました")
 
         # 受信を停止してウィンドウを閉じる
         self._stop()
