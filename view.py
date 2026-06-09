@@ -24,7 +24,7 @@ class View(ctk.CTk):
         self.lock = threading.Lock()
 
         # 保存済み設定を読み込む
-        self.settings = SaveSet.load()
+        self.settings = SaveSet.load()  # 設定保存 削除
 
         # 同期状態
         self.latest_sync_sts = None
@@ -64,6 +64,7 @@ class View(ctk.CTk):
     def _on_toggle(self):
         """開始・停止ボタンの処理"""
         if self.is_running:
+
             self._stop()
         else:
             self._start()
@@ -144,11 +145,11 @@ class View(ctk.CTk):
             # after()の定期処理をキャンセルする
             self.after_cancel(self._update_id)
 
-            # 設定を保存する
-            SaveSet.save(
-                port=self.control_panel.get_port(),
-                cmd=self.control_panel.get_cmd(),
-            )
+            # 設定を保存する【廃止】
+            # SaveSet.save(
+            #     port=self.control_panel.get_port(),
+            #     cmd=self.control_panel.get_cmd(),
+            # )
         except Exception:
             print(f"【エラー】データの保存に失敗しました")
 

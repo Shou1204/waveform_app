@@ -21,16 +21,16 @@ class SaveSet:
             return
 
     @staticmethod
-    def load():
+    def load():  # 設定保存 廃止
         """設定をJSONファイルから読み込む。ファイルがなければデフォルト値を返す"""
-        try:
-            if not os.path.exists(SETTINGS_FILE):
-                return {"port": "", "cmd": ""}
+        # try:
+        #     if not os.path.exists(SETTINGS_FILE):
+        #         return {"port": "", "cmd": ""}
 
-            with open(SETTINGS_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return {
-                "port": "",
-                "cmd": "",
-            }
+        #     with open(SETTINGS_FILE, "r") as f:
+        #         return json.load(f)
+        # except Exception:
+        return {
+            "port": "",
+            "cmd": "",
+        }

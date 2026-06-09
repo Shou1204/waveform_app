@@ -99,6 +99,4 @@ class SerialReader:
             value = ((high << 7) | low) & 0x7FF  # bit0〜bit10のみ
             value -= 1024
             ecg_list.append(value)
-
-        print()
         return ecg_list
