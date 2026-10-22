@@ -120,6 +120,54 @@ class TestRunning(ViewTestBase):
         self.assertEqual(self.app.jig.sent_ch, "1002")
         self.assertEqual(self.app.control_panel.selected_cmd, "1002")
 
+    def test_manual_command_with_other_properties(self):
+        """ほかの項目と一緒の C＋4桁はチャンネルとして覚える"""
+        self.app._on_send_cmd("F1H1A2C1002K1")
+        self.assertEqual(self.app.jig.sent_ch, "1002")
+
+    def test_manual_command_not_channel(self):
+        """C＋5桁や、項目の途中の C はチャンネルとして覚えない"""
+        self.app._on_send_cmd("C10010")
+        self.app._on_send_cmd("XC1234")
+        self.assertIsNone(self.app.jig.sent_ch)
+        self.assertIsNone(self.app.control_panel.selected_cmd)
+
+    def test_manual_command_non_ascii(self):
+        """全角などは送らずに知らせ、受信は止めない"""
+        self.app._on_send_cmd("Ｃ１００１")
+        self.msg.showwarning.assert_called_once()
+        self.msg.showerror.assert_not_called()
+        self.assertEqual(self.board.written, [])
+        self.assertIsNotNone(self.app.reader)
+
+    def test_error_shown_once(self):
+        """受信のエラーと送信のエラーが重なっても、知らせるのは 1 回"""
+        self.app.rx_queue.put(("error", serial.SerialException("ClearCommError failed")))
+
+        def unplugged(data):
+            raise serial.SerialException("WriteFile failed")
+
+        self.board.write = unplugged
+        self.app._on_send_channel("1001")
+        self.pump(0.4)
+        self.msg.showerror.assert_called_once()
+
+    def test_update_survives_exception(self):
+        """画面の更新で例外が出ても、定期更新は続く"""
+        calls = []
+        original = self.app.wave_chart.show
+
+        def flaky(*args):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("描画のエラー")
+            original(*args)
+
+        self.app.wave_chart.show = flaky
+        self.app.report_callback_exception = lambda *a: None
+        self.pump(0.5)
+        self.assertGreater(len(calls), 2)
+
     def test_no_data_when_board_stops(self):
         """基盤が出力をやめたら 1 秒で受信なしになり、波形が消える"""
         self.pump(0.5)

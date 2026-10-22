@@ -124,6 +124,8 @@ class View(tk.Tk):
         self.reader = None
         self.thread = None
         self.stop_event = None
+        # 止める前に入った受信やエラーを持ち越さない
+        self.rx_queue = queue.Queue()
         self.jig.stop()
         self.control_panel.set_running(False)
 
@@ -165,13 +167,17 @@ class View(tk.Tk):
         """手打ちのコマンドを送信する"""
         if not self.reader or value == "":
             return
+        if not (value.isascii() and value.isprintable()):
+            # 打ち間違いで受信まで止めないよう、送る前に断る
+            messagebox.showwarning(APP_TITLE, "コマンドは半角の英数字で入れてください。")
+            return
         try:
             self.reader.send_cmd(value)
         except Exception as e:
             self._fail(e)
             return
-        # チャンネルが入っていれば、送った値として覚える
-        m = re.search(r"C(\d{4})", value)
+        # チャンネル（先頭か、前の項目の数字の直後の C＋4桁）が入っていれば、送った値として覚える
+        m = re.search(r"(?:^|(?<=\d))C(\d{4})(?!\d)", value)
         if m:
             self.jig.sent(m.group(1))
             self.control_panel.set_selected_wave(m.group(1))
@@ -180,6 +186,13 @@ class View(tk.Tk):
 
     def _update(self):
         """10Hzで受信したパケットを取り込み、画面を更新する"""
+        try:
+            self._refresh()
+        finally:
+            # 途中で例外が出ても、定期更新は止めない（画面が固まって前の波形が残らないように）
+            self._update_id = self.after(UPDATE_INTERVAL_MS, self._update)
+
+    def _refresh(self):
         now = self.clock()
         while True:
             try:
@@ -196,8 +209,6 @@ class View(tk.Tk):
         self.status_bar.set(recv, self.jig.sync(now))
         self.info_bar.set(self.jig.board_ch, self.jig.sent_ch, self.jig.packet_count)
         self.wave_chart.show(self.jig.wave, self.jig.cursor, recv == Recv.NO_DATA)
-
-        self._update_id = self.after(UPDATE_INTERVAL_MS, self._update)
 
     def _on_close(self):
         """ウィンドウを閉じるときの処理"""

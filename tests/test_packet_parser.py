@@ -1,5 +1,6 @@
 """受信したバイト列からパケットを切り出す部分の試験"""
 
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -26,10 +27,29 @@ class TestPacketParser(unittest.TestCase):
         self.assertEqual(pkt[PktKey.SEQ_NO], 12345)
         self.assertEqual(pkt[PktKey.ECG], [wave_value(1001, i) for i in range(30)])
 
-    def test_ecg_flags_are_ignored(self):
-        """ECG のフラグ（bit12 など）は値に入れない"""
-        pkt = PacketParser().feed(build_packet([0x1000 | 1024] * 30))[0]
-        self.assertEqual(pkt[PktKey.ECG], [0] * 30)
+    def test_error_flag_is_nan(self):
+        """エラーフラグ（bit12）のデータは NaN（データが無いのに −1024 の線を描かない）"""
+        pkt = PacketParser().feed(build_packet([0x1000] * 30, sync=0))[0]
+        self.assertTrue(all(math.isnan(v) for v in pkt[PktKey.ECG]))
+
+    def test_qrs_flag_is_ignored(self):
+        """QRS フラグ（bit13）は値に入れない"""
+        pkt = PacketParser().feed(build_packet([0x2000 | 1124] * 30))[0]
+        self.assertEqual(pkt[PktKey.ECG], [100] * 30)
+
+    def test_drops_bad_checksum(self):
+        """チェックサムが合わないパケットは捨てる"""
+        bad = bytearray(triangle_packet(seq=0))
+        bad[50] ^= 0x01
+        got = PacketParser().feed(bytes(bad) + triangle_packet(seq=1))
+        self.assertEqual([p[PktKey.SEQ_NO] for p in got], [1])
+
+    def test_drops_bit7_set(self):
+        """データのバイトに bit7 が立っている（化けた）パケットは捨てる"""
+        bad = bytearray(triangle_packet(seq=0))
+        bad[27] |= 0x80
+        got = PacketParser().feed(bytes(bad) + triangle_packet(seq=1))
+        self.assertEqual([p[PktKey.SEQ_NO] for p in got], [1])
 
     def test_split_chunks(self):
         """細切れに届いても 1 つにまとまる"""
