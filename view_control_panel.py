@@ -1,196 +1,143 @@
-import customtkinter as ctk
+import tkinter as tk
+
+import theme as T
 from port_scanner import PortScanner
 from wave_list import WAVE_LIST
 
 
-class ControlPanel(ctk.CTkFrame):
+class ControlPanel(tk.Frame):
+    """左の操作パネル（① ポート → ② 受信 → ③ 波形を送る）"""
 
-    COLOR_SUCCESS = "#03a53e"
-    COL_TXT1 = "#b9b9b9"
-
-    # --------------------------------------------------------
-    #               ウィジェット位置のテーブル
-    # --------------------------------------------------------
-    POS = {
-        ## comポート
-        "com_label": {
-            "row": 0,
-            "column": 0,
-            "padx": (10, 10),
-            "sticky": "w",
-        },
-        ## 起動・停止
-        "run_label": {
-            "row": 1,
-            "column": 0,
-            "padx": (10, 10),
-            "sticky": "ns",
-        },
-        "run_btn": {
-            "row": 1,
-            "column": 1,
-            "padx": (15, 10),
-            "sticky": "ns",
-        },
-        "com_dd": {"row": 0, "column": 1, "padx": (0, 0)},
-        ## コマンド
-        "cmd_label": {"row": 0, "column": 3, "padx": (10, 0), "sticky": "ws"},
-        "cmd_entry": {"row": 0, "column": 4, "padx": (10, 0), "sticky": "e"},
-        "cmd_btn": {"row": 0, "column": 5, "padx": (3, 0), "sticky": "w"},
-        ## 波形選択
-        "select_label": {"row": 1, "column": 3, "padx": (10, 0), "sticky": "ws"},
-        "select_btn": {
-            "row": 1,
-            "column": 4,
-            "padx": (10, 10),
-            "sticky": "ns",
-        },
-        ## 同期状態
-        "sync_label": {"row": 0, "column": 7, "padx": (10, 5), "sticky": "e"},
-        "sync_mark": {"row": 0, "column": 8, "padx": (10, 5), "sticky": "e"},
-        "sync_sts_label": {"row": 0, "column": 9, "padx": (5, 10), "sticky": "w"},
-        ## dummy
-        "dummy": {"row": 0, "column": 6, "padx": (5, 10), "sticky": "we"},
-    }
-
-    def __init__(
-        self, master, on_toggle, on_send_channel, on_send_cmd, settings, **kwargs
-    ):
-        super().__init__(master, **kwargs)
-        self.my_font = ctk.CTkFont(family="BIZ UDGothic", size=12, weight="bold")
-
-        self.LABEL_SET1 = {"text_color": "#A0A0A0", "font": self.my_font}
+    def __init__(self, master, on_toggle, on_send_channel, on_send_cmd, extra_ports=()):
+        super().__init__(
+            master, bg=T.PANEL, width=240, highlightbackground=T.LINE, highlightthickness=1
+        )
+        self.pack_propagate(False)
 
         self.on_toggle = on_toggle
         self.on_send_channel = on_send_channel
         self.on_send_cmd = on_send_cmd
+        self.extra_ports = list(extra_ports)
 
-        self.settings = settings
+        self.wave_btns = {}
+        self.selected_cmd = None
+        self.manual_open = False
+
         self._setup_ui()
+        self.set_running(False)
+
+    def _step(self, text):
+        tk.Label(self, text=text, bg=T.PANEL, fg=T.TEXT, font=T.font(13, True)).pack(
+            anchor="w", padx=14, pady=(16, 6)
+        )
+
+    def _flat_btn(self, parent, **kwargs):
+        return tk.Button(parent, relief="flat", bd=0, cursor="hand2", **kwargs)
 
     def _setup_ui(self):
         """UIパーツを配置する"""
-        pos = self.POS
 
-        # グリッド幅調整用ダミーボックス
-        self.dummy_box = ctk.CTkFrame(self, width=20, height=20, fg_color="transparent")
-        self.dummy_box.grid(**pos["dummy"])
-
-        # COMポート選択
-        self.port_var = ctk.StringVar(value=self.settings["port"])
-        ## ラベル
-        ctk.CTkLabel(self, text="COMポート", **self.LABEL_SET1).grid(**pos["com_label"])
-        ## DD
-        self.port_dropdown = ctk.CTkOptionMenu(
-            self,
-            width=100,
-            height=20,
-            variable=self.port_var,
-            values=PortScanner.get_ports(),
-            font=self.my_font,
-            dropdown_font=self.my_font,
+        # ① ポート
+        self._step("①  ポート")
+        row = tk.Frame(self, bg=T.PANEL)
+        row.pack(anchor="w", padx=14)
+        self.port_var = tk.StringVar()
+        self.port_menu = tk.OptionMenu(row, self.port_var, "")
+        self.port_menu.configure(font=T.font(11), width=8)
+        self.port_menu.pack(side="left")
+        self.refresh_btn = self._flat_btn(
+            row, text="↻ 探す", bg=T.BTN, fg=T.TEXT, font=T.font(10), padx=8,
+            command=self.refresh_ports,
         )
-        self.port_dropdown.grid(**pos["com_dd"])
+        self.refresh_btn.pack(side="left", padx=6)
+        self.refresh_ports()
 
-        # 通信開始・停止
-        ## ラベル
-        self.power_label = ctk.CTkLabel(self, text="停止/通信開始", **self.LABEL_SET1)
-        self.power_label.grid(**pos["run_label"])
-        ## ボタン
-        self.power_tgl_btn = ctk.CTkSwitch(
-            self,
-            text="",
-            switch_width=36,
-            switch_height=18,
-            corner_radius=12,
-            border_width=2,
-            progress_color=self.COLOR_SUCCESS,
-            button_color="#E0E0E0",
-            button_hover_color="#FFFFFF",
-            command=self.on_toggle,
-            font=self.my_font,
+        # ② 受信
+        self._step("②  受信")
+        self.run_btn = self._flat_btn(
+            self, fg="#ffffff", font=T.font(16, True), pady=6, command=self.on_toggle
         )
-        self.power_tgl_btn.grid(**pos["run_btn"])
+        self.run_btn.pack(fill="x", padx=14)
 
-        # コマンド
-        ctk.CTkLabel(self, text="コマンド", **self.LABEL_SET1).grid(**pos["cmd_label"])
-        self.cmd_entry = ctk.CTkEntry(self, width=160, height=20, font=self.my_font)
-        self.cmd_entry.insert(0, self.settings["cmd"])
-        self.cmd_entry.grid(**pos["cmd_entry"])
-        self.cmd_btn = ctk.CTkButton(
-            self,
-            text="送信",
-            font=self.my_font,
-            width=40,
-            height=20,
+        # ③ 波形を送る
+        self._step("③  波形を送る")
+        for item in WAVE_LIST:
+            btn = self._flat_btn(
+                self,
+                text=f"{item['label']}　（{item['cmd']}）",
+                font=T.font(12),
+                pady=4,
+                command=lambda cmd=item["cmd"]: self.on_send_channel(cmd),
+            )
+            btn.pack(fill="x", padx=14, pady=2)
+            self.wave_btns[item["cmd"]] = btn
+        self.set_selected_wave(None)
+
+        # 手打ちコマンド（ふだんは畳んでおく）
+        self.manual_toggle = self._flat_btn(
+            self, text="▸ 手打ちコマンド", bg=T.PANEL, fg=T.SUB, font=T.font(10),
+            activebackground=T.PANEL, anchor="w", command=self._toggle_manual,
+        )
+        self.manual_toggle.pack(side="bottom", anchor="w", padx=14, pady=(4, 12))
+
+        self.manual_frame = tk.Frame(self, bg=T.PANEL)
+        self.cmd_entry = tk.Entry(self.manual_frame, font=T.font(11), width=12)
+        self.cmd_entry.pack(side="left", fill="x", expand=True)
+        self.cmd_entry.bind("<Return>", lambda _e: self._on_send_cmd())
+        self.cmd_btn = self._flat_btn(
+            self.manual_frame, text="送信", bg=T.BTN, fg=T.TEXT, font=T.font(10), padx=8,
             command=self._on_send_cmd,
         )
-        self.cmd_btn.grid(**pos["cmd_btn"])
+        self.cmd_btn.pack(side="left", padx=(6, 0))
 
-        # 波形選択
-        ## ラベル
-        ctk.CTkLabel(self, text="波形選択", **self.LABEL_SET1).grid(
-            **pos["select_label"]
-        )
-        ## ボタン
-        self.select_wave_btn = ctk.CTkSegmentedButton(
-            self,
-            values=[item["label"] for item in WAVE_LIST],
-            font=self.my_font,
-            # **color,
-            command=self._on_send_channel,
-        )
-        self.select_wave_btn.grid(**pos["select_btn"])
-        self.select_wave_btn.set("未設定")  # 初期値
-
-        # 同期状態
-        ## ラベル
-        self.sync_label = ctk.CTkLabel(self, text="同期状態", **self.LABEL_SET1)
-        self.sync_label.grid(**pos["sync_label"])
-        ## ●
-        self.sync_mark = ctk.CTkLabel(self, text="●", font=self.my_font)
-        self.sync_mark.grid(**pos["sync_mark"])
-        ## 状態ラベル
-        self.sync_sts_chr = ctk.CTkLabel(
-            self,
-            text="---",
-            font=self.my_font,
-        )
-        self.sync_sts_chr.grid(**pos["sync_sts_label"])
-
-    def set_sync_status(self, value):
-
-        match value:
-            case 0:
-                self.sync_sts_chr.configure(text="未")
-                self.sync_mark.configure(text_color="#FF6B6B")
-            case 1:
-                self.sync_sts_chr.configure(text="済")
-                self.sync_mark.configure(text_color="#00ff5e")
+    def refresh_ports(self):
+        """COMポートの一覧を読み直す"""
+        ports = [p for p in PortScanner.get_ports() if p] + self.extra_ports
+        menu = self.port_menu["menu"]
+        menu.delete(0, "end")
+        for port in ports:
+            menu.add_command(label=port, command=tk._setit(self.port_var, port))
+        if self.port_var.get() not in ports:
+            self.port_var.set(ports[0] if ports else "")
 
     def get_port(self):
         return self.port_var.get()
 
-    def get_cmd(self):
-        return self.cmd_entry.get()
-
     def set_running(self, is_running):
+        """開始・停止に合わせて、押せるボタンを切り替える"""
         if is_running:
-            self.port_dropdown.configure(state="disabled")
-            self.cmd_btn.configure(state="normal")
-            self.select_wave_btn.configure(state="normal")
+            self.run_btn.configure(text="■ 停止", bg=T.RED, activebackground=T.RED)
         else:
-            self.port_dropdown.configure(state="normal")
-            self.cmd_btn.configure(state="disabled")
-            self.select_wave_btn.configure(state="disabled")
-            self.sync_sts_chr.configure(
-                text="---",
-            )
-            self.sync_mark.configure(text_color="#656565")
+            self.run_btn.configure(text="▶ 開始", bg=T.GREEN, activebackground=T.GREEN)
 
-    def _on_send_channel(self, val):
-        cmd = next(item["cmd"] for item in WAVE_LIST if item["label"] == val)
-        self.on_send_channel(cmd)
+        idle = "normal" if not is_running else "disabled"
+        busy = "normal" if is_running else "disabled"
+        self.port_menu.configure(state=idle)
+        self.refresh_btn.configure(state=idle)
+        for btn in self.wave_btns.values():
+            btn.configure(state=busy)
+        self.cmd_entry.configure(state=busy)
+        self.cmd_btn.configure(state=busy)
+
+    def set_selected_wave(self, cmd):
+        """送った波形のボタンに色を付ける"""
+        self.selected_cmd = cmd
+        for c, btn in self.wave_btns.items():
+            if c == cmd:
+                btn.configure(bg=T.BLUE, fg="#ffffff", activebackground=T.BLUE,
+                              activeforeground="#ffffff", disabledforeground="#d2e3fc")
+            else:
+                btn.configure(bg=T.BTN, fg=T.TEXT, activebackground="#dadce0",
+                              activeforeground=T.TEXT, disabledforeground=T.BTN_DISABLED_TEXT)
+
+    def _toggle_manual(self):
+        self.manual_open = not self.manual_open
+        if self.manual_open:
+            self.manual_toggle.configure(text="▾ 手打ちコマンド")
+            self.manual_frame.pack(side="bottom", fill="x", padx=14)
+        else:
+            self.manual_toggle.configure(text="▸ 手打ちコマンド")
+            self.manual_frame.pack_forget()
 
     def _on_send_cmd(self):
-        self.on_send_cmd(self.cmd_entry.get())
+        self.on_send_cmd(self.cmd_entry.get().strip())

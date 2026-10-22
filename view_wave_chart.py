@@ -1,75 +1,67 @@
-import matplotlib.pyplot as plt
+import tkinter as tk
+
+import matplotlib
+import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import customtkinter as ctk
+from matplotlib.figure import Figure
 
-# 画面に表示するサンプル数（サンプル数=秒数x300）
-DISPLAY_SAMPLES = 1500
+import theme as T
+from jig_state import DISPLAY_SAMPLES, NO_DATA_SEC
+
+matplotlib.rcParams["font.family"] = T.PLOT_FONT
+
+# Y軸の範囲（ECGデータは中心0で±1024）
+Y_LIMIT = 1150
 
 
-class WaveChart(ctk.CTkFrame):
-
-    COLOR_FRAME = "#555C65"
-    COLOR_LINE = "#57E908"
+class WaveChart(tk.Frame):
+    """波形表示（左から右へ上書きしていく）"""
 
     def __init__(self, master):
-        super().__init__(master)
-
-        # 波形データのバッファ
-        self.samples = []
-
+        super().__init__(master, bg=T.PANEL, highlightbackground=T.LINE, highlightthickness=1)
+        self.x = np.arange(DISPLAY_SAMPLES)
         self._setup_plot()
 
     def _setup_plot(self):
         """matplotlibのグラフを作成してウィンドウに埋め込む"""
+        self.fig = Figure(dpi=self.winfo_fpixels("1i"), facecolor=T.PANEL)
+        self.ax = self.fig.add_axes([0.07, 0.08, 0.91, 0.9])
+        ax = self.ax
+        ax.set_xlim(0, DISPLAY_SAMPLES)
+        ax.set_ylim(-Y_LIMIT, Y_LIMIT)
+        ax.set_xticks([0, 300, 600, 900, 1200, 1500], ["0", "1秒", "2秒", "3秒", "4秒", "5秒"])
+        ax.set_yticks([-1000, -500, 0, 500, 1000])
+        ax.tick_params(colors=T.SUB, labelsize=8, length=0)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        ax.grid(color=T.GRID, linewidth=0.8)
 
-        # 黒背景のグラフ
-        self.fig, self.ax = plt.subplots(figsize=(8, 4), facecolor="black")  # 大背景
-        self.ax.set_facecolor("black")  # グラフ背景
-        self.ax.tick_params(
-            colors=self.COLOR_FRAME,
-            labelsize=8,
-            labelfontfamily="BIZ UDGothic",
-        )  # メモリ
-        self.ax.spines[:].set_color(self.COLOR_FRAME)  # 枠線
+        empty = np.full(DISPLAY_SAMPLES, np.nan)
+        (self.line_old,) = ax.plot(self.x, empty, color=T.WAVE_OLD, linewidth=1.6)
+        (self.line_new,) = ax.plot(self.x, empty, color=T.WAVE_NEW, linewidth=1.6)
 
-        # 初期の空ラインを作成
-        (self.line,) = self.ax.plot(
-            [],
-            [],
-            color=self.COLOR_LINE,
-            linewidth=1.2,
-            solid_capstyle="round",
-            solid_joinstyle="round",
+        # 受信なしのときの文字
+        self.no_data_title = ax.text(
+            DISPLAY_SAMPLES / 2, 120, "受信なし", ha="center", va="center",
+            color=T.RED, fontsize=30, fontweight="bold", visible=False,
+        )
+        self.no_data_note = ax.text(
+            DISPLAY_SAMPLES / 2, -180,
+            f"{NO_DATA_SEC:.1f} 秒以上データが来ていません　波形は消しました",
+            ha="center", color=T.RED, fontsize=11, visible=False,
         )
 
-        # Y軸の範囲を固定（ECGデータのbit0〜bit10 = 0〜2047）
-        self.ax.set_ylim(-2047, 2047)
-        self.ax.set_xlim(0, DISPLAY_SAMPLES)
-        # self.ax.set_yticklabels([])  # Y軸目盛の値を非表示
-        self.ax.spines["top"].set_visible(False)
-        self.ax.spines["right"].set_visible(False)
-        self.ax.grid(
-            axis="both", color=self.COLOR_FRAME, linewidth=0.4, linestyle="--"
-        )  # Y軸の内部メモリ線
-
-        self.ax.set_xticks([0, 300, 600, 900, 1200, 1500])
-        self.ax.set_xticklabels(
-            ["0sec", "1.0sec", "2.0sec", "3.0sec", "4.0sec", "5.0sec"]
-        )
-
-        # グラフをウィンドウに埋め込む
         self.canvas = FigureCanvasTkAgg(self.fig, master=self)
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
-    def add_samples(self, new_samples):
-        """ECGデータを追加する"""
-        self.samples.extend(new_samples)
+    def show(self, wave, cursor, no_data):
+        """波形を描き直す。cursor より左が今の周、右が前の周"""
+        is_new = self.x < cursor
+        self.line_new.set_ydata(np.where(is_new, wave, np.nan))
+        self.line_old.set_ydata(np.where(is_new, np.nan, wave))
 
-        # 表示サンプル数を超えたらリセット
-        if len(self.samples) >= DISPLAY_SAMPLES:
-            self.samples = []
-
-    def update(self):
-        """波形を再描画する"""
-        self.line.set_data(range(len(self.samples)), self.samples)
+        self.ax.set_facecolor(T.NO_DATA_BG if no_data else T.PANEL)
+        self.no_data_title.set_visible(no_data)
+        self.no_data_note.set_visible(no_data)
+        # draw_idle() だと閉じた後に描画の予約が残るので、その場で描く
         self.canvas.draw()

@@ -1,164 +1,207 @@
+import queue
+import re
 import threading
-import customtkinter as ctk
+import time
+import tkinter as tk
+from tkinter import messagebox
 
+import theme as T
+from jig_state import JigState, Recv
 from serial_reader import SerialReader
-from view_wave_chart import WaveChart
 from view_control_panel import ControlPanel
-from packet import PktKey
-from save_set import SaveSet
+from view_status import InfoBar, StatusBar
+from view_wave_chart import WaveChart
 
 # 更新間隔（ミリ秒）。10Hz = 100ms
 UPDATE_INTERVAL_MS = 100
 
+APP_TITLE = "受信ユニット検査治具 v.1.0"
 
-class View(ctk.CTk):
 
-    def __init__(self):
+class View(tk.Tk):
+
+    def __init__(self, serial_factory=None, extra_ports=(), clock=time.monotonic):
         super().__init__()
-        self.title("受信ユニット検査治具 v.0.0")
-        self.geometry("800x500")
+        self.title(APP_TITLE)
+        self.geometry("1000x620")
+        self.minsize(820, 560)
+        self.configure(bg=T.BG)
+
+        self.serial_factory = serial_factory
+        self.clock = clock
+
+        # 治具の状態（tk.Tk の state() と名前がぶつかるので jig とする）
+        self.jig = JigState()
 
         # シリアル受信関連
         self.reader = None
-        self.is_running = False
-        self.lock = threading.Lock()
+        self.thread = None
+        self.stop_event = None
+        self.rx_queue = queue.Queue()
 
-        # 保存済み設定を読み込む
-        self.settings = SaveSet.load()  # 設定保存 削除
-
-        # 同期状態
-        self.latest_sync_sts = None
-
-        # 背景色
-        self.configure(fg_color="#000000")
-
-        self._setup_ui()
+        self._setup_ui(extra_ports)
         self._update()
 
-        # ウィンドウを閉じるときに設定を保存する
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    def _setup_ui(self):
+    def _setup_ui(self, extra_ports):
         """UIレイアウトを作成する"""
+        self.columnconfigure(1, weight=1)
+        self.rowconfigure(0, weight=1)
 
-        self.columnconfigure(0, weight=1)  # 列0が余ったスペースをすべて取る
-        self.rowconfigure(1, weight=1)
-
-        # 波形表示エリア（下部）
-        self.wave_chart = WaveChart(master=self)
-        self.wave_chart.grid(row=1, column=0)
-
-        # 操作パネル（上部）
+        # 操作パネル（左）
         self.control_panel = ControlPanel(
-            master=self,
+            self,
             on_toggle=self._on_toggle,
             on_send_channel=self._on_send_channel,
             on_send_cmd=self._on_send_cmd,
-            fg_color="transparent",
-            settings=self.settings,
+            extra_ports=extra_ports,
         )
-        self.control_panel.grid(
-            row=0, column=0, pady=(15, 0), padx=(15, 0), sticky="we"
-        )
+        self.control_panel.grid(row=0, column=0, sticky="ns", padx=(12, 0), pady=12)
+
+        # 状態・波形・数字（右）
+        right = tk.Frame(self, bg=T.BG)
+        right.grid(row=0, column=1, sticky="nsew", padx=12, pady=12)
+        right.columnconfigure(0, weight=1)
+        right.rowconfigure(1, weight=1)
+
+        self.status_bar = StatusBar(right)
+        self.status_bar.grid(row=0, column=0, sticky="we")
+        self.wave_chart = WaveChart(right)
+        self.wave_chart.grid(row=1, column=0, sticky="nsew", pady=8)
+        self.info_bar = InfoBar(right)
+        self.info_bar.grid(row=2, column=0, sticky="we")
+
+    # ------------------------------------------------------------ 開始・停止
 
     def _on_toggle(self):
         """開始・停止ボタンの処理"""
-        if self.is_running:
-
+        if self.reader:
             self._stop()
         else:
             self._start()
 
     def _start(self):
-        """受信を開始する"""
-        self.reader = SerialReader(port=self.control_panel.get_port())
-        self.is_running = True
-        self.control_panel.set_running(True)
+        """受信を開始する。ポートを開けなければ知らせて止まったままにする"""
+        port = self.control_panel.get_port()
+        if not port:
+            messagebox.showwarning(APP_TITLE, "COM ポートが見つかりません。\nUSB シリアル変換器をつないで「↻ 探す」を押してください。")
+            return
 
-        self.serial_thread = threading.Thread(target=self._receive_loop, daemon=True)
-        self.serial_thread.start()
+        reader = SerialReader(port=port, serial_factory=self.serial_factory)
+        try:
+            reader.open()
+        except Exception as e:
+            messagebox.showerror(
+                APP_TITLE,
+                f"{port} を開けませんでした。\n"
+                "ほかのアプリ（Tera Term など）が使っていないか、変換器が抜けていないかを確かめてください。\n\n"
+                f"{e}",
+            )
+            return
+
+        self.reader = reader
+        self.rx_queue = queue.Queue()
+        self.stop_event = threading.Event()
+        self.thread = threading.Thread(
+            target=self._receive_loop,
+            args=(reader, self.stop_event, self.rx_queue),
+            daemon=True,
+        )
+        self.jig.start(self.clock())
+        self.control_panel.set_selected_wave(None)
+        self.control_panel.set_running(True)
+        self.thread.start()
 
     def _stop(self):
         """受信を停止する"""
-        self.is_running = False
+        if self.stop_event:
+            self.stop_event.set()
+        if self.thread:
+            self.thread.join(timeout=1)
         if self.reader:
             self.reader.close()
+        self.reader = None
+        self.thread = None
+        self.stop_event = None
+        self.jig.stop()
         self.control_panel.set_running(False)
 
-    def _receive_loop(self):
-        """受信スレッドで動く。パケットを受信してwave_chartに追加する"""
-        self.reader.open()
-        self.reader.sync()
+    def _fail(self, error):
+        """受信や送信が失敗したら、止めて知らせる"""
+        self._stop()
+        messagebox.showerror(
+            APP_TITLE,
+            "受信が止まりました。\nUSB シリアル変換器が抜けていないかを確かめ、もう一度「開始」を押してください。\n\n"
+            f"{error}",
+        )
 
-        while self.is_running:
-            try:
-                self.reader.sync()
-                packet = self.reader.read()
+    @staticmethod
+    def _receive_loop(reader, stop_event, rx_queue):
+        """受信スレッドで動く。パケットをキューに入れるだけで、画面には触らない"""
+        try:
+            while not stop_event.is_set():
+                for packet in reader.read_packets():
+                    rx_queue.put(("packet", packet))
+        except Exception as e:
+            if not stop_event.is_set():
+                rx_queue.put(("error", e))
 
-                if packet:
-                    new_sts = packet[PktKey.SYNC_STS]
+    # ------------------------------------------------------------ 送信
 
-                    with self.lock:
-                        self.wave_chart.add_samples(packet[PktKey.ECG])
-                        self.latest_sync_sts = new_sts
-            except Exception:
-                break
-
-    def _on_send_channel(self, value):
-        """チャンネル変更命令を送信する"""
-        print(f"CH送信: {value}")
-        self.reader.send_ch(value)
+    def _on_send_channel(self, cmd):
+        """チャンネル変更命令を送信する（同じボタンをもう一度押しても送る）"""
+        if not self.reader:
+            return
+        try:
+            self.reader.send_ch(cmd)
+        except Exception as e:
+            self._fail(e)
+            return
+        self.jig.sent(cmd)
+        self.control_panel.set_selected_wave(cmd)
 
     def _on_send_cmd(self, value):
-        """マニュアルコマンドを送信する"""
-        print(f"CMD送信: {value}")
-        if value == "":
-            print("## cmd not imput")
+        """手打ちのコマンドを送信する"""
+        if not self.reader or value == "":
             return
-        self.reader.send_cmd(value)
+        try:
+            self.reader.send_cmd(value)
+        except Exception as e:
+            self._fail(e)
+            return
+        # チャンネルが入っていれば、送った値として覚える
+        m = re.search(r"C(\d{4})", value)
+        if m:
+            self.jig.sent(m.group(1))
+            self.control_panel.set_selected_wave(m.group(1))
+
+    # ------------------------------------------------------------ 定期更新
 
     def _update(self):
-        """10Hzで波形を更新する"""
-        with self.lock:
-            self.wave_chart.update()
-            sts = self._get_sync_sts(self.latest_sync_sts)  # 同期状態
+        """10Hzで受信したパケットを取り込み、画面を更新する"""
+        now = self.clock()
+        while True:
+            try:
+                kind, item = self.rx_queue.get_nowait()
+            except queue.Empty:
+                break
+            if kind == "error":
+                self._fail(item)
+                break
+            self.jig.on_packet(item, now)
 
-        if sts is not None:
-            self.control_panel.set_sync_status(sts)
+        self.jig.tick(now)
+        recv = self.jig.recv(now)
+        self.status_bar.set(recv, self.jig.sync(now))
+        self.info_bar.set(self.jig.board_ch, self.jig.sent_ch, self.jig.packet_count)
+        self.wave_chart.show(self.jig.wave, self.jig.cursor, recv == Recv.NO_DATA)
 
         self._update_id = self.after(UPDATE_INTERVAL_MS, self._update)
 
-    def _get_sync_sts(self, sts):
-        """同期状態を取得"""
-        # 3以外は未同期とみなします
-        if self.is_running:
-            match sts:
-                case 0 | 1 | 2:
-                    return False
-                case 3:
-                    return True
-
     def _on_close(self):
         """ウィンドウを閉じるときの処理"""
-
-        try:
-            # after()の定期処理をキャンセルする
-            self.after_cancel(self._update_id)
-
-            # 設定を保存する【廃止】
-            # SaveSet.save(
-            #     port=self.control_panel.get_port(),
-            #     cmd=self.control_panel.get_cmd(),
-            # )
-        except Exception:
-            print(f"【エラー】データの保存に失敗しました")
-
-        # 受信を停止してウィンドウを閉じる
+        self.after_cancel(self._update_id)
         self._stop()
         self.quit()  # mainloopを止める
         self.destroy()
-
-
-if __name__ == "__main__":
-    app = View()
-    app.mainloop()
