@@ -59,22 +59,38 @@ class InfoBox(tk.Frame):
         self.value = tk.Label(self, text="―", bg=T.PANEL, fg=T.TEXT, font=T.font(15, True))
         self.value.pack(anchor="w")
 
-    def set(self, text):
-        self.value.configure(text=text)
+    def set(self, text, color=T.TEXT):
+        self.value.configure(text=text, fg=color)
 
 
 class InfoBar(tk.Frame):
-    """下の数字（CH・パケット数）"""
+    """下の数字（CH・パケット数・抜け・化け・基盤エラー・受信なし）"""
 
     def __init__(self, master):
         super().__init__(master, bg=T.BG)
-        self.ch_box = InfoBox(self, "CH（基盤が返した値／送った値）")
+        self.ch_box = InfoBox(self, "CH（基盤の値／送った値）")
         self.ch_box.pack(side="left", padx=(0, 8))
         self.pkt_box = InfoBox(self, "パケット")
-        self.pkt_box.pack(side="left")
+        self.pkt_box.pack(side="left", padx=(0, 8))
+        # 1 つでもあれば赤くする（合否は人が決める）
+        self.lost_box = InfoBox(self, "抜け")
+        self.lost_box.pack(side="left", padx=(0, 8))
+        self.bad_box = InfoBox(self, "化け")
+        self.bad_box.pack(side="left", padx=(0, 8))
+        self.err_box = InfoBox(self, "基盤エラー")
+        self.err_box.pack(side="left", padx=(0, 8))
+        self.no_data_box = InfoBox(self, "受信なし")
+        self.no_data_box.pack(side="left")
 
-    def set(self, board_ch, sent_ch, packet_count):
+    def set(self, board_ch, sent_ch, packet_count, lost_count, bad_count, board_err_count, no_data_count):
         board = "―" if board_ch is None else str(board_ch)
         sent = "―" if sent_ch is None else sent_ch
         self.ch_box.set(f"{board}（送 {sent}）")
         self.pkt_box.set(f"{packet_count:,}")
+        for box, count in (
+            (self.lost_box, lost_count),
+            (self.bad_box, bad_count),
+            (self.err_box, board_err_count),
+            (self.no_data_box, no_data_count),
+        ):
+            box.set(f"{count:,}", T.RED if count else T.TEXT)

@@ -51,6 +51,42 @@ class TestPacketParser(unittest.TestCase):
         got = PacketParser().feed(bytes(bad) + triangle_packet(seq=1))
         self.assertEqual([p[PktKey.SEQ_NO] for p in got], [1])
 
+    def test_counts_bad(self):
+        """形の崩れたパケット（チェックサム・bit7・後ろの抜け）を 1 つずつ数える"""
+        sum_ng = bytearray(triangle_packet(seq=0))
+        sum_ng[50] ^= 0x01
+        bit7 = bytearray(triangle_packet(seq=1))
+        bit7[27] |= 0x80
+        short = triangle_packet(seq=2)[:60]
+        parser = PacketParser()
+        got = parser.feed(bytes(sum_ng) + bytes(bit7) + short + triangle_packet(seq=3))
+        self.assertEqual([p[PktKey.SEQ_NO] for p in got], [3])
+        self.assertEqual(parser.bad_count, 3)
+
+    def test_counts_bad_end_code(self):
+        """終了コードが違うパケットも化けと数える"""
+        bad = bytearray(triangle_packet(seq=0))
+        bad[99] = 0x7F
+        parser = PacketParser()
+        got = parser.feed(bytes(bad) + triangle_packet(seq=1))
+        self.assertEqual([p[PktKey.SEQ_NO] for p in got], [1])
+        self.assertEqual(parser.bad_count, 1)
+
+    def test_start_code_garbled_is_lost_not_bad(self):
+        """開始コードが化けたパケットは見つけられないので、化けではなく抜け（番号の飛び）で出る"""
+        bad = bytearray(triangle_packet(seq=1))
+        bad[0] = 0x70
+        parser = PacketParser()
+        got = parser.feed(triangle_packet(seq=0) + bytes(bad) + triangle_packet(seq=2))
+        self.assertEqual([p[PktKey.SEQ_NO] for p in got], [0, 2])
+        self.assertEqual(parser.bad_count, 0)
+
+    def test_no_bad_for_good_or_garbage(self):
+        """正しいパケットと、開始コードの前のごみ（途中から読み始めたとき）は数えない"""
+        parser = PacketParser()
+        parser.feed(triangle_packet(seq=0)[40:] + triangle_packet(seq=1) + triangle_packet(seq=2))
+        self.assertEqual(parser.bad_count, 0)
+
     def test_split_chunks(self):
         """細切れに届いても 1 つにまとまる"""
         data = triangle_packet() + triangle_packet(30, seq=1)

@@ -24,7 +24,7 @@ class View(tk.Tk):
         super().__init__()
         self.title(APP_TITLE)
         self.geometry("1000x620")
-        self.minsize(820, 560)
+        self.minsize(940, 560)  # 下の数字の箱（6 つ）が欠けずに並ぶ幅
         self.configure(bg=T.BG)
 
         self.serial_factory = serial_factory
@@ -143,8 +143,11 @@ class View(tk.Tk):
         """受信スレッドで動く。パケットをキューに入れるだけで、画面には触らない"""
         try:
             while not stop_event.is_set():
+                bad = reader.parser.bad_count
                 for packet in reader.read_packets():
                     rx_queue.put(("packet", packet))
+                if reader.parser.bad_count != bad:
+                    rx_queue.put(("bad", reader.parser.bad_count - bad))
         except Exception as e:
             if not stop_event.is_set():
                 rx_queue.put(("error", e))
@@ -202,12 +205,23 @@ class View(tk.Tk):
             if kind == "error":
                 self._fail(item)
                 break
-            self.jig.on_packet(item, now)
+            if kind == "bad":
+                self.jig.on_bad(item)
+            else:
+                self.jig.on_packet(item, now)
 
         self.jig.tick(now)
         recv = self.jig.recv(now)
         self.status_bar.set(recv, self.jig.sync(now))
-        self.info_bar.set(self.jig.board_ch, self.jig.sent_ch, self.jig.packet_count)
+        self.info_bar.set(
+            self.jig.board_ch,
+            self.jig.sent_ch,
+            self.jig.packet_count,
+            self.jig.lost_count,
+            self.jig.bad_count,
+            self.jig.board_err_count,
+            self.jig.no_data_count,
+        )
         self.wave_chart.show(self.jig.wave, self.jig.cursor, recv == Recv.NO_DATA)
 
     def _on_close(self):

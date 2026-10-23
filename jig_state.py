@@ -14,6 +14,8 @@ GAP_SAMPLES = 25
 NO_DATA_SEC = 1.0
 # 同期状態の「同期済み」（検査基盤の SyncSts_e の SYNC_READY）
 SYNC_READY = 3
+# 通し番号が 0 に戻る値（検査基盤の to_host.c の MAX_TX_FORM_IDX。48時間）
+SEQ_WRAP = 1728000
 
 
 class Recv(Enum):
@@ -40,6 +42,11 @@ class JigState:
         self.wave = np.full(DISPLAY_SAMPLES, np.nan)
         self.cursor = 0
         self.packet_count = 0
+        self.lost_count = 0  # 抜け（通し番号が飛んだ回数）
+        self.bad_count = 0  # 化け（形の崩れたパケットの数）
+        self.board_err_count = 0  # 基盤エラー（基盤がダミーから受けたフレームのエラーの合計）
+        self.no_data_count = 0  # 受信なし（受信なしになった回数）
+        self.last_seq = None
         self.board_ch = None
         self.sent_ch = None
         self.sync_sts = None
@@ -74,18 +81,31 @@ class JigState:
         for i in range(GAP_SAMPLES):
             self.wave[(self.cursor + i) % DISPLAY_SAMPLES] = np.nan
 
+        # 通し番号が前の +1 でなければ抜け（基盤の電源の入れ直しも 1 回と数える）
+        seq = packet[PktKey.SEQ_NO]
+        if self.last_seq is not None and seq != (self.last_seq + 1) % SEQ_WRAP:
+            self.lost_count += 1
+        self.last_seq = seq
+
         self.packet_count += 1
+        self.board_err_count += packet[PktKey.ERR_CNT]
         self.board_ch = packet[PktKey.CHANNEL]
         self.sync_sts = packet[PktKey.SYNC_STS]
         self.last_rx_at = now
         self.cleared = False
 
+    def on_bad(self, count):
+        """形の崩れたパケット（チェックサム・bit7・終了コードの誤り）を数える"""
+        if self.running:
+            self.bad_count += count
+
     def tick(self, now):
-        """定期処理。受信なしになったら波形を消す"""
+        """定期処理。受信なしになったら波形を消し、その回数を数える"""
         if self.recv(now) == Recv.NO_DATA and not self.cleared:
             self.wave[:] = np.nan
             self.cursor = 0
             self.cleared = True
+            self.no_data_count += 1
 
     def recv(self, now):
         """受信の状態"""

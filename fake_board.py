@@ -14,6 +14,8 @@
 - link_ok = False … 基盤 → ダミーの線が抜けている（ダミーが付いてこない）
 - sending = False … 基盤が出力をやめる
 - garble = True … ときどきバイトが化ける
+- drop = True … ときどきパケットが抜ける（通し番号が飛ぶ）
+- board_err = True … ときどき基盤がフレームのエラーを数える（ERR_CNT）
 """
 
 import math
@@ -43,7 +45,7 @@ def wave_value(wave, i):
     return 0  # 6001 波形なし
 
 
-def build_packet(ecg_raw, ch=1001, sync=3, seq=0):
+def build_packet(ecg_raw, ch=1001, sync=3, seq=0, err=0):
     """検査基盤（to_host.c）と同じ形の100バイトを作る。ecg_raw は 0〜2047（とフラグ）の30個"""
     p = bytearray(100)
     p[0] = 0xF0
@@ -52,6 +54,7 @@ def build_packet(ecg_raw, ch=1001, sync=3, seq=0):
     p[22], p[23], p[24] = (seq >> 14) & 0x7F, (seq >> 7) & 0x7F, seq & 0x7F
     p[27] = sync
     p[28] = SPI_BYTES
+    p[31] = err
     for i, v in enumerate(ecg_raw):
         p[38 + i * 2] = (v >> 7) & 0x7F
         p[39 + i * 2] = v & 0x7F
@@ -74,6 +77,8 @@ class FakeSerial:
         self.link_ok = True
         self.sending = True
         self.garble = False
+        self.drop = False
+        self.board_err = False
         self.written = []  # 書き込まれたバイト列（試験で見る）
 
         self._lock = threading.Lock()
@@ -106,8 +111,11 @@ class FakeSerial:
                 ecg = [NO_ECG] * SAMPLES
                 sync = 0
 
-            pkt = bytearray(build_packet(ecg, self.board_ch, sync, self._seq))
+            err = 1 if self.board_err and random.random() < 0.3 else 0
+            pkt = bytearray(build_packet(ecg, self.board_ch, sync, self._seq, err))
             self._seq += 1
+            if self.drop and random.random() < 0.3:
+                continue
             if self.garble and random.random() < 0.3:
                 pkt[random.randrange(1, 99)] |= 0x80
             self._buf += pkt

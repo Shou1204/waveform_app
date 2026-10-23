@@ -68,6 +68,7 @@ class PacketParser:
 
     def __init__(self):
         self.buf = bytearray()
+        self.bad_count = 0  # 開始コードはあったが、形の崩れていたパケットの数
 
     def feed(self, data):
         """バイト列を足し、そろったパケット（辞書）のリストを返す"""
@@ -86,7 +87,8 @@ class PacketParser:
 
             raw = bytes(self.buf[:PACKET_SIZE])
             if not is_valid_packet(raw):
-                # 欠けている・化けている → この開始コードだけ捨てて次を探す
+                # 欠けている・化けている → 数えて、この開始コードだけ捨てて次を探す
+                self.bad_count += 1
                 del self.buf[:1]
                 continue
 

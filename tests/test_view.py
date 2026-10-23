@@ -12,6 +12,7 @@ import serial
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import fake_board  # noqa: E402
+import theme as T  # noqa: E402
 from fake_board import FakeSerial  # noqa: E402
 from jig_state import Recv, Sync  # noqa: E402
 from view import View  # noqa: E402
@@ -176,6 +177,12 @@ class TestRunning(ViewTestBase):
         self.pump(1.6)
         self.assertEqual(self.app.jig.recv(self.clock()), Recv.NO_DATA)
         self.assertTrue(np.isnan(self.app.jig.wave).all())
+        # 基盤が戻っても、受信なしになったことは下の数字に赤で残る
+        self.board.sending = True
+        self.pump(0.5)
+        self.assertEqual(self.app.jig.recv(self.clock()), Recv.RECEIVING)
+        self.assertEqual(self.app.info_bar.no_data_box.value.cget("text"), "1")
+        self.assertEqual(self.app.info_bar.no_data_box.value.cget("fg"), T.RED)
 
     def test_not_synced_when_link_broken(self):
         """基盤 → ダミーの線が抜けていると、CH は変わるが未同期になる（2026-10-22 の場面）"""
@@ -189,17 +196,40 @@ class TestRunning(ViewTestBase):
         self.assertEqual(self.app.jig.board_ch, 1002)
         self.assertEqual(self.app.jig.sync(self.clock()), Sync.NOT_SYNCED)
 
+    def test_counts_shown_and_red(self):
+        """抜け・化け・基盤エラーを数えて出し、1 つでもあれば赤くする。ふだんは 0"""
+        self.pump(0.5)
+        info = self.app.info_bar
+        for box in (info.lost_box, info.bad_box, info.err_box, info.no_data_box):
+            self.assertEqual(box.value.cget("text"), "0")
+        self.board.drop = self.board.garble = self.board.board_err = True
+        # 偽の基盤は乱数で不良を入れるので、3 つとも出るまで回す（上限 8 秒）
+        jig = self.app.jig
+        end = time.monotonic() + 8
+        while time.monotonic() < end and not (jig.lost_count and jig.bad_count and jig.board_err_count):
+            self.pump(0.5)
+        self.assertGreater(self.app.jig.lost_count, 0)
+        self.assertGreater(self.app.jig.bad_count, 0)
+        self.assertGreater(self.app.jig.board_err_count, 0)
+        for box in (info.lost_box, info.bad_box, info.err_box):
+            self.assertEqual(box.value.cget("fg"), T.RED)
+
     def test_restart_clears_previous(self):
         """停止 → 開始で、前の波形と状態が残らない"""
         with mock.patch.object(fake_board, "FOLLOW_SEC", 0.2):
             self.app._on_send_channel("1001")
             self.pump(0.6)
+            self.board.drop = self.board.garble = self.board.board_err = True
+            self.pump(1.0)
         self.app._on_toggle()  # 停止
         self.app._on_toggle()  # 開始（新しい基盤）
         self.board.sending = False
         self.app.update()
         self.assertTrue(np.isnan(self.app.jig.wave).all())
         self.assertIsNone(self.app.jig.board_ch)
+        self.assertEqual(self.app.jig.lost_count, 0)
+        self.assertEqual(self.app.jig.bad_count, 0)
+        self.assertEqual(self.app.jig.board_err_count, 0)
         self.assertEqual(self.app.jig.sync(self.clock()), Sync.UNKNOWN)
         self.assertIsNone(self.app.control_panel.selected_cmd)
 
