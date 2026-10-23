@@ -47,26 +47,27 @@ class TestRecv(unittest.TestCase):
         s.start(10.0)
         self.assertEqual(s.recv(11.0), Recv.NO_DATA)
 
-    def test_no_data_clears_wave(self):
-        """1 秒来なければ受信なしにして、波形を消す（前の波形が残って合格に見えないように）"""
+    def test_no_data_keeps_wave(self):
+        """1 秒来なければ受信なし・同期不明にする。波形は消さずに残す（止まる前に何が来ていたかを見られるように）"""
         s = JigState()
         s.start(0.0)
         s.on_packet(packet(), 0.1)
-        s.tick(0.5)
-        self.assertFalse(np.isnan(s.wave[:30]).any())
         s.tick(1.1)
         self.assertEqual(s.recv(1.1), Recv.NO_DATA)
-        self.assertTrue(np.isnan(s.wave).all())
         self.assertEqual(s.sync(1.1), Sync.UNKNOWN)
+        self.assertFalse(np.isnan(s.wave[:30]).any())
+        self.assertEqual(s.cursor, 30)
 
     def test_recovers_after_no_data(self):
+        """受信なしから戻ったら、残した波形の続きに描く"""
         s = JigState()
         s.start(0.0)
         s.on_packet(packet(), 0.1)
         s.tick(2.0)
         s.on_packet(packet(), 2.1)
         self.assertEqual(s.recv(2.2), Recv.RECEIVING)
-        self.assertFalse(np.isnan(s.wave[:30]).any())
+        self.assertEqual(s.cursor, 60)
+        self.assertFalse(np.isnan(s.wave[:60]).any())
 
 
 class TestSync(unittest.TestCase):

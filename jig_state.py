@@ -52,7 +52,7 @@ class JigState:
         self.sync_sts = None
         self.started_at = None
         self.last_rx_at = None
-        self.cleared = False
+        self.no_data_counted = False
 
     def start(self, now):
         """受信を開始する。前の波形と状態は消す"""
@@ -92,19 +92,17 @@ class JigState:
         self.board_ch = packet[PktKey.CHANNEL]
         self.sync_sts = packet[PktKey.SYNC_STS]
         self.last_rx_at = now
-        self.cleared = False
+        self.no_data_counted = False
 
     def on_bad(self, count):
-        """形の崩れたパケット（チェックサム・bit7・終了コードの誤り）を数える"""
+        """形の崩れたパケット（チェックサム・終了コードの誤り）を数える"""
         if self.running:
             self.bad_count += count
 
     def tick(self, now):
-        """定期処理。受信なしになったら波形を消し、その回数を数える"""
-        if self.recv(now) == Recv.NO_DATA and not self.cleared:
-            self.wave[:] = np.nan
-            self.cursor = 0
-            self.cleared = True
+        """定期処理。受信なしになった回数を数える（波形は消さずに残す）"""
+        if self.recv(now) == Recv.NO_DATA and not self.no_data_counted:
+            self.no_data_counted = True
             self.no_data_count += 1
 
     def recv(self, now):

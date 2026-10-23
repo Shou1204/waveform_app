@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import messagebox
 
 import theme as T
-from jig_state import JigState, Recv
+from jig_state import JigState
 from serial_reader import SerialReader
 from view_control_panel import ControlPanel
 from view_status import InfoBar, StatusBar
@@ -211,8 +211,7 @@ class View(tk.Tk):
                 self.jig.on_packet(item, now)
 
         self.jig.tick(now)
-        recv = self.jig.recv(now)
-        self.status_bar.set(recv, self.jig.sync(now))
+        self.status_bar.set(self.jig.recv(now), self.jig.sync(now))
         self.info_bar.set(
             self.jig.board_ch,
             self.jig.sent_ch,
@@ -222,7 +221,7 @@ class View(tk.Tk):
             self.jig.board_err_count,
             self.jig.no_data_count,
         )
-        self.wave_chart.show(self.jig.wave, self.jig.cursor, recv == Recv.NO_DATA)
+        self.wave_chart.show(self.jig.wave, self.jig.cursor)
 
     def _on_close(self):
         """ウィンドウを閉じるときの処理"""

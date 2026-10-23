@@ -7,7 +7,6 @@ END_CODE = 0xFF  # 終了コード
 ECG_OFFSET = 38  # ECGデータの開始位置
 ECG_COUNT = 30  # 1パケットのECGデータ数
 CHECKSUM_POS = 98  # チェックサムの位置
-ECG_ERR_BIT = 0x1000  # エラーフラグ（bit12）。検査基盤はECGが足りないときにこれだけを入れる
 
 STX = b"\x02"
 ETX = b"\x03"
@@ -26,16 +25,14 @@ def parse_packet(raw):
 
 
 def is_valid_packet(raw):
-    """終了コード・各バイトの bit7・チェックサムが合っているか
+    """終了コードとチェックサムが合っているか（捨てるのはこの 2 つだけ。中身の値は見ない）
 
     チェックサムは検査基盤（to_host.c の get_check_sum）と同じく、開始コードから
     チェックサムの手前までの合計の下位7ビット（仕様書は開始コードを除くと書いているが、実機はこちら）
     """
     if raw[-1] != END_CODE:
         return False
-    if any(b & 0x80 for b in raw[1:CHECKSUM_POS + 1]):
-        return False
-    return (sum(raw[:CHECKSUM_POS]) & 0x7F) == raw[CHECKSUM_POS]
+    return (sum(raw[:CHECKSUM_POS]) & 0x7F) == (raw[CHECKSUM_POS] & 0x7F)
 
 
 def _parse_int(raw, offset, size):
@@ -47,19 +44,16 @@ def _parse_int(raw, offset, size):
 
 
 def _parse_ecg(raw, offset):
-    """ECGデータ30個を取り出す（bit0〜bit10、中心を0にする）
+    """ECGデータ30個を取り出す（仕様書どおり bit0〜bit10 を値とし、中心を0にする）
 
-    エラーフラグ（bit12）が立っているものはデータが無いので NaN にする（描かない）
+    フラグ（bit12 エラー・bit13 QRS）は値に入れない。エラーフラグが立っていても、
+    検査基盤が送ってきた bit0〜bit10 をそのまま描く（ECG が無いとき基盤は 0 を入れるので −1024 の線になる）
     """
     ecg_list = []
     for i in range(ECG_COUNT):
         high = raw[offset + i * 2] & 0x7F
         low = raw[offset + i * 2 + 1] & 0x7F
-        value = (high << 7) | low
-        if value & ECG_ERR_BIT:
-            ecg_list.append(float("nan"))
-        else:
-            ecg_list.append((value & 0x7FF) - 1024)
+        ecg_list.append((((high << 7) | low) & 0x7FF) - 1024)
     return ecg_list
 
 

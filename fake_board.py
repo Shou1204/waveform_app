@@ -117,7 +117,8 @@ class FakeSerial:
             if self.drop and random.random() < 0.3:
                 continue
             if self.garble and random.random() < 0.3:
-                pkt[random.randrange(1, 99)] |= 0x80
+                # データの 1 ビットを反転する（チェックサムで見つかる下位 7 ビットのどれか）
+                pkt[random.randrange(1, 98)] ^= 1 << random.randrange(7)
             self._buf += pkt
 
     @property

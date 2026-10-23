@@ -20,7 +20,6 @@ GRAY = "#80868b"
 WAVE_NEW = "#174ea6"  # 今描いている波形
 WAVE_OLD = "#a8c1ef"  # 前の周の波形
 GRID = "#e3e6ea"
-NO_DATA_BG = "#fdecea"
 
 
 def font(size, bold=False):

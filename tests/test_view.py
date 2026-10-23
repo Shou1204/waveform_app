@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import matplotlib.colors
 import numpy as np
 import serial
 
@@ -170,13 +171,20 @@ class TestRunning(ViewTestBase):
         self.assertGreater(len(calls), 2)
 
     def test_no_data_when_board_stops(self):
-        """基盤が出力をやめたら 1 秒で受信なしになり、波形が消える"""
+        """基盤が出力をやめたら 1 秒で受信なしになる。波形は残る"""
         self.pump(0.5)
         self.assertGreater(self.app.jig.packet_count, 0)
         self.board.sending = False
-        self.pump(1.6)
+        self.pump(0.3)  # 止める前に届いていた分を取り込む
+        before = self.app.jig.wave.copy()
+        self.pump(1.3)
         self.assertEqual(self.app.jig.recv(self.clock()), Recv.NO_DATA)
-        self.assertTrue(np.isnan(self.app.jig.wave).all())
+        np.testing.assert_array_equal(self.app.jig.wave, before)
+        # 画面の線も残り、背景はふだんのまま
+        chart = self.app.wave_chart
+        drawn = np.concatenate([chart.line_new.get_ydata(), chart.line_old.get_ydata()])
+        self.assertFalse(np.isnan(drawn).all())
+        self.assertEqual(matplotlib.colors.to_hex(chart.ax.get_facecolor()), T.PANEL)
         # 基盤が戻っても、受信なしになったことは下の数字に赤で残る
         self.board.sending = True
         self.pump(0.5)

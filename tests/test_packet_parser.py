@@ -1,6 +1,5 @@
 """受信したバイト列からパケットを切り出す部分の試験"""
 
-import math
 import sys
 import unittest
 from pathlib import Path
@@ -27,10 +26,12 @@ class TestPacketParser(unittest.TestCase):
         self.assertEqual(pkt[PktKey.SEQ_NO], 12345)
         self.assertEqual(pkt[PktKey.ECG], [wave_value(1001, i) for i in range(30)])
 
-    def test_error_flag_is_nan(self):
-        """エラーフラグ（bit12）のデータは NaN（データが無いのに −1024 の線を描かない）"""
+    def test_error_flag_drawn_as_is(self):
+        """エラーフラグ（bit12）が立っていても、bit0〜bit10 をそのまま値にする（基盤が ECG 無しで送る 0x1000 は −1024）"""
         pkt = PacketParser().feed(build_packet([0x1000] * 30, sync=0))[0]
-        self.assertTrue(all(math.isnan(v) for v in pkt[PktKey.ECG]))
+        self.assertEqual(pkt[PktKey.ECG], [-1024] * 30)
+        pkt = PacketParser().feed(build_packet([0x1000 | 1524] * 30))[0]
+        self.assertEqual(pkt[PktKey.ECG], [500] * 30)
 
     def test_qrs_flag_is_ignored(self):
         """QRS フラグ（bit13）は値に入れない"""
@@ -44,24 +45,40 @@ class TestPacketParser(unittest.TestCase):
         got = PacketParser().feed(bytes(bad) + triangle_packet(seq=1))
         self.assertEqual([p[PktKey.SEQ_NO] for p in got], [1])
 
-    def test_drops_bit7_set(self):
-        """データのバイトに bit7 が立っている（化けた）パケットは捨てる"""
+    def test_keeps_bit7_set(self):
+        """データのバイトに bit7 が立っていても捨てない（下位 7 ビットは正しいので、そのまま描く）"""
         bad = bytearray(triangle_packet(seq=0))
-        bad[27] |= 0x80
-        got = PacketParser().feed(bytes(bad) + triangle_packet(seq=1))
-        self.assertEqual([p[PktKey.SEQ_NO] for p in got], [1])
+        bad[50] |= 0x80
+        bad[98] |= 0x80
+        parser = PacketParser()
+        got = parser.feed(bytes(bad) + triangle_packet(seq=1))
+        self.assertEqual([p[PktKey.SEQ_NO] for p in got], [0, 1])
+        self.assertEqual(got[0][PktKey.ECG], [wave_value(1001, i) for i in range(30)])
+        self.assertEqual(parser.bad_count, 0)
+
+    def test_keeps_bit7_set_in_header(self):
+        """見出しの項目（通し番号・基盤エラー）のバイトに bit7 が立っていても、下位 7 ビットで読む"""
+        bad = bytearray(build_packet([1024] * 30, seq=300, err=2))
+        bad[24] |= 0x80
+        bad[31] |= 0x80
+        pkt = PacketParser().feed(bytes(bad))[0]
+        self.assertEqual(pkt[PktKey.SEQ_NO], 300)
+        self.assertEqual(pkt[PktKey.ERR_CNT], 2)
+
+    def test_both_flags_are_not_value(self):
+        """エラー（bit12）と QRS（bit13）の両方が立っていても、値は bit0〜bit10"""
+        pkt = PacketParser().feed(build_packet([0x3000 | 1124] * 30))[0]
+        self.assertEqual(pkt[PktKey.ECG], [100] * 30)
 
     def test_counts_bad(self):
-        """形の崩れたパケット（チェックサム・bit7・後ろの抜け）を 1 つずつ数える"""
+        """形の崩れたパケット（チェックサム・後ろの抜け）を 1 つずつ数える"""
         sum_ng = bytearray(triangle_packet(seq=0))
         sum_ng[50] ^= 0x01
-        bit7 = bytearray(triangle_packet(seq=1))
-        bit7[27] |= 0x80
-        short = triangle_packet(seq=2)[:60]
+        short = triangle_packet(seq=1)[:60]
         parser = PacketParser()
-        got = parser.feed(bytes(sum_ng) + bytes(bit7) + short + triangle_packet(seq=3))
-        self.assertEqual([p[PktKey.SEQ_NO] for p in got], [3])
-        self.assertEqual(parser.bad_count, 3)
+        got = parser.feed(bytes(sum_ng) + short + triangle_packet(seq=2))
+        self.assertEqual([p[PktKey.SEQ_NO] for p in got], [2])
+        self.assertEqual(parser.bad_count, 2)
 
     def test_counts_bad_end_code(self):
         """終了コードが違うパケットも化けと数える"""

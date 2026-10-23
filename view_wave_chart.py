@@ -6,7 +6,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 import theme as T
-from jig_state import DISPLAY_SAMPLES, NO_DATA_SEC
+from jig_state import DISPLAY_SAMPLES
 
 matplotlib.rcParams["font.family"] = T.PLOT_FONT
 
@@ -40,28 +40,14 @@ class WaveChart(tk.Frame):
         (self.line_old,) = ax.plot(self.x, empty, color=T.WAVE_OLD, linewidth=1.6)
         (self.line_new,) = ax.plot(self.x, empty, color=T.WAVE_NEW, linewidth=1.6)
 
-        # 受信なしのときの文字
-        self.no_data_title = ax.text(
-            DISPLAY_SAMPLES / 2, 120, "受信なし", ha="center", va="center",
-            color=T.RED, fontsize=30, fontweight="bold", visible=False,
-        )
-        self.no_data_note = ax.text(
-            DISPLAY_SAMPLES / 2, -180,
-            f"{NO_DATA_SEC:.1f} 秒以上データが来ていません　波形は消しました",
-            ha="center", color=T.RED, fontsize=11, visible=False,
-        )
-
         self.canvas = FigureCanvasTkAgg(self.fig, master=self)
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
-    def show(self, wave, cursor, no_data):
+    def show(self, wave, cursor):
         """波形を描き直す。cursor より左が今の周、右が前の周"""
         is_new = self.x < cursor
         self.line_new.set_ydata(np.where(is_new, wave, np.nan))
         self.line_old.set_ydata(np.where(is_new, np.nan, wave))
 
-        self.ax.set_facecolor(T.NO_DATA_BG if no_data else T.PANEL)
-        self.no_data_title.set_visible(no_data)
-        self.no_data_note.set_visible(no_data)
         # draw_idle() だと閉じた後に描画の予約が残るので、その場で描く
         self.canvas.draw()
